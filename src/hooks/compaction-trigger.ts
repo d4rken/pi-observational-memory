@@ -23,55 +23,62 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 		const hasUI = ctx.hasUI;
 		const ui = ctx.ui;
 
-		if (hasUI) ui?.notify(
-			`Observational memory: compaction threshold reached (~${progress.toLocaleString()} estimated source tokens); triggering compaction`,
-			"info",
-		);
-
 		runtime.compactInFlight = true;
-		setTimeout(() => {
-			try {
-				if (!ctx.isIdle()) {
-					runtime.compactInFlight = false;
-					if (hasUI) ui?.notify(
-						"Observational memory: compaction deferred — agent became busy before compaction",
-						"info",
-					);
-					return;
-				}
-				const currentEntries = ctx.sessionManager?.getBranch?.() as Entry[] | undefined;
-				if (!currentEntries) {
-					runtime.compactInFlight = false;
-					return;
-				}
-				const currentProgress = rawTokensSinceLastCompaction(currentEntries);
-				if (currentProgress < threshold) {
-					runtime.compactInFlight = false;
-					if (hasUI) ui?.notify(
-						"Observational memory: compaction skipped — another compaction already ran before deferred compaction",
-						"info",
-					);
-					return;
-				}
-				ctx.compact({
-					onComplete: () => {
+		const pending = runtime.consolidationPromise;
+		// A running consolidation may still extend observation coverage up to the cut.
+		if (pending) void pending.finally(startCompaction);
+		else startCompaction();
+
+		function startCompaction(): void {
+			if (hasUI) ui?.notify(
+				`Observational memory: compaction threshold reached (~${progress.toLocaleString()} estimated source tokens); triggering compaction`,
+				"info",
+			);
+
+			setTimeout(() => {
+				try {
+					if (!ctx.isIdle()) {
 						runtime.compactInFlight = false;
-						if (hasUI) ui?.notify("Observational memory: compaction complete", "info");
-					},
-					onError: (error: { message: string }) => {
+						if (hasUI) ui?.notify(
+							"Observational memory: compaction deferred — agent became busy before compaction",
+							"info",
+						);
+						return;
+					}
+					const currentEntries = ctx.sessionManager?.getBranch?.() as Entry[] | undefined;
+					if (!currentEntries) {
 						runtime.compactInFlight = false;
-						if (error.message === "Compaction cancelled") {
-							// We already notified the user with the real reason before returning { cancel: true }.
-							return;
-						}
-						if (hasUI) ui?.notify(`Observational memory: ${error.message}`, "error");
-					},
-				});
-			} catch (error) {
-				runtime.compactInFlight = false;
-				const msg = error instanceof Error ? error.message : String(error);
-				if (hasUI) ui?.notify(`Observational memory: compact threw: ${msg}`, "error");
-			}
-		}, 0);
+						return;
+					}
+					const currentProgress = rawTokensSinceLastCompaction(currentEntries);
+					if (currentProgress < threshold) {
+						runtime.compactInFlight = false;
+						if (hasUI) ui?.notify(
+							"Observational memory: compaction skipped — another compaction already ran before deferred compaction",
+							"info",
+						);
+						return;
+					}
+					ctx.compact({
+						onComplete: () => {
+							runtime.compactInFlight = false;
+							if (hasUI) ui?.notify("Observational memory: compaction complete", "info");
+						},
+						onError: (error: { message: string }) => {
+							runtime.compactInFlight = false;
+							if (error.message === "Compaction cancelled") {
+								// We already notified the user with the real reason before returning { cancel: true }.
+								return;
+							}
+							if (hasUI) ui?.notify(`Observational memory: ${error.message}`, "error");
+						},
+					});
+				} catch (error) {
+					runtime.compactInFlight = false;
+					const msg = error instanceof Error ? error.message : String(error);
+					if (hasUI) ui?.notify(`Observational memory: compact threw: ${msg}`, "error");
+				}
+			}, 0);
+		}
 	});
 }

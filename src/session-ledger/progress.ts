@@ -74,6 +74,20 @@ export function latestCoverageMarkerId(entries: Entry[], customType: V3MemoryCus
 	return latestMarkerId;
 }
 
+/**
+ * Whether a source entry before `entryId` is not yet covered by observations.
+ * A memory summary cut at `entryId` would drop such an entry from context
+ * without anything recording it. An unknown `entryId` counts as uncovered.
+ */
+export function hasUnobservedSourceBefore(entries: Entry[], entryId: string): boolean {
+	const cutIndex = entryIndexForId(entries, entryId);
+	if (cutIndex === -1) return true;
+	for (let i = latestCoverageIndex(entries, OM_OBSERVATIONS_RECORDED) + 1; i < cutIndex; i++) {
+		if (isSourceEntry(entries[i])) return true;
+	}
+	return false;
+}
+
 export function earlierCoverageMarkerId(entries: Entry[], firstId: string | undefined, secondId: string | undefined): string | undefined {
 	if (!firstId) return secondId;
 	if (!secondId) return firstId;

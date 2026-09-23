@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerCompactionTrigger } from "../src/hooks/compaction-trigger.js";
-import { compactionEntry, rawMessage, textCustomMessage, type TestEntry } from "./fixtures/session.js";
+import {
+	compactionEntry,
+	observation,
+	observationsRecordedEntry,
+	rawMessage,
+	textCustomMessage,
+	type TestEntry,
+} from "./fixtures/session.js";
 
 function captureHandler(args: { compactAfterTokens?: number; compactAfterTokensMode?: "calibrated" | "ratio"; compactAfterTokensRatio?: number; passive?: boolean; compactInFlight?: boolean } = {}) {
 	let handler: ((event: unknown, ctx: unknown) => void) | undefined;
@@ -20,6 +27,7 @@ function captureHandler(args: { compactAfterTokens?: number; compactAfterTokensM
 			passive: args.passive ?? false,
 		},
 		compactInFlight: args.compactInFlight ?? false,
+		consolidationPromise: null as Promise<void> | null,
 		observerPromise: new Promise(() => {}),
 		reflectDropPromise: new Promise(() => {}),
 	};
@@ -83,6 +91,40 @@ describe("V3 compaction trigger", () => {
 			"Observational memory: compaction threshold reached (~3 estimated source tokens); triggering compaction",
 			"info",
 		);
+	});
+
+	it("waits for a running consolidation before compacting", async () => {
+		const { handler, runtime } = captureHandler({ compactAfterTokens: 3 });
+		let finish!: () => void;
+		runtime.consolidationPromise = new Promise<void>((resolve) => { finish = resolve; });
+		const ctx = fakeCtx([dueBranch]);
+
+		handler(agentSettled(), ctx);
+		await vi.runAllTimersAsync();
+
+		expect(runtime.compactInFlight).toBe(true);
+		expect(ctx.compact).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
+
+		finish();
+		await vi.runAllTimersAsync();
+
+		expect(ctx.compact).toHaveBeenCalledTimes(1);
+	});
+
+	it("compacts without waiting when no consolidation runs, even with unobserved source", async () => {
+		const { handler } = captureHandler({ compactAfterTokens: 3 });
+		const unobservedBranch = [
+			textCustomMessage("raw-0", "aaaaaaaaaaaa"),
+			observationsRecordedEntry("om-obs", { observations: [observation("aaaaaaaaaaaa", { sourceEntryIds: ["raw-0"] })], coversUpToId: "raw-0" }),
+			...dueBranch,
+		];
+		const ctx = fakeCtx([unobservedBranch]);
+
+		handler(agentSettled(), ctx);
+		await vi.runAllTimersAsync();
+
+		expect(ctx.compact).toHaveBeenCalledTimes(1);
 	});
 
 	it("skips passive mode", async () => {

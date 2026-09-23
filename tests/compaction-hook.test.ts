@@ -64,6 +64,21 @@ describe("V3 compaction hook", () => {
 		expect(runtime.compactHookInFlight).toBe(false);
 	});
 
+	it("delegates to native compaction while observer coverage lags the cut", async () => {
+		const obs1 = observation("aaaaaaaaaaaa", { sourceEntryIds: ["raw-1"], tokenCount: 10 });
+		const entries = [
+			textCustomMessage("raw-1", "aaaa"),
+			observationsRecordedEntry("om-aaaaaaaaaaaa", { observations: [obs1], coversUpToId: "raw-1" }),
+			textCustomMessage("raw-2", "unobserved"),
+			textCustomMessage("raw-3", "kept"),
+		];
+		const { run, runtime } = setup({ entries, observationsPoolMaxTokens: 100 });
+
+		expect(await run("raw-3")).toBeUndefined();
+		expect(runtime.compactHookInFlight).toBe(false);
+		expect(await run("raw-2")).toMatchObject({ compaction: { firstKeptEntryId: "raw-2" } });
+	});
+
 	it("first normal compaction writes covered observations without orphan reflections", async () => {
 		const obs1 = observation("aaaaaaaaaaaa", { sourceEntryIds: ["raw-1"], tokenCount: 10 });
 		const ref1 = reflection("eeeeeeeeeeee", ["aaaaaaaaaaaa"]);

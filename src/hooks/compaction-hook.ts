@@ -5,7 +5,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import type { Runtime } from "../runtime.js";
-import { buildCompactionProjection, renderSummary, type Entry } from "../session-ledger/index.js";
+import { buildCompactionProjection, hasUnobservedSourceBefore, renderSummary, type Entry } from "../session-ledger/index.js";
 
 const DEFAULT_OBSERVATIONS_POOL_MAX_TOKENS = 20_000;
 
@@ -33,6 +33,8 @@ export function registerCompactionHook(pi: ExtensionAPI, runtime: Runtime): void
 			runtime.ensureConfig(ctx.cwd);
 			const { preparation, branchEntries } = event;
 			const { firstKeptEntryId, tokensBefore } = preparation;
+			// Observer coverage lags the cut: decline so Pi's native summarizer covers that span.
+			if (hasUnobservedSourceBefore(branchEntries as Entry[], firstKeptEntryId)) return;
 			const projection = buildCompactionProjection(
 				branchEntries as Entry[],
 				firstKeptEntryId,

@@ -129,11 +129,12 @@ function projectionFromMemoryDetails(details: MemoryDetails): Projection {
 	};
 }
 
+/** Details of the latest compaction when memory wrote it; a later native summary hides older memory. */
 function latestV3CompactionDetails(entries: Entry[]): MemoryDetails | undefined {
 	for (let i = entries.length - 1; i >= 0; i--) {
 		const entry = entries[i];
 		if (entry.type !== "compaction") continue;
-		if (isMemoryDetails(entry.details)) return entry.details;
+		return isMemoryDetails(entry.details) ? entry.details : undefined;
 	}
 	return undefined;
 }

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	earlierCoverageMarkerId,
 	entryIndexById,
+	hasUnobservedSourceBefore,
 	isSourceEntry,
 	latestCoverageIndex,
 	latestCoverageMarkerId,
@@ -26,6 +27,33 @@ import {
 	reflectionsRecordedEntry,
 	textCustomMessage,
 } from "./fixtures/session.js";
+
+describe("hasUnobservedSourceBefore", () => {
+	const obs = observation("aaaaaaaaaaaa", { sourceEntryIds: ["raw-1"] });
+
+	it("reports source entries between observation coverage and the cut", () => {
+		const entries = [
+			textCustomMessage("raw-1", "a"),
+			observationsRecordedEntry("om-1", { observations: [obs], coversUpToId: "raw-1" }),
+			branchSummary("summary-2", "b"),
+			textCustomMessage("raw-3", "c"),
+		];
+
+		expect(hasUnobservedSourceBefore(entries, "raw-3")).toBe(true);
+		expect(hasUnobservedSourceBefore(entries, "summary-2")).toBe(false);
+	});
+
+	it("treats every earlier source entry as unobserved without coverage", () => {
+		const entries = [textCustomMessage("raw-1", "a"), textCustomMessage("raw-2", "b")];
+
+		expect(hasUnobservedSourceBefore(entries, "raw-2")).toBe(true);
+		expect(hasUnobservedSourceBefore(entries, "raw-1")).toBe(false);
+	});
+
+	it("treats a cut it cannot place as uncovered", () => {
+		expect(hasUnobservedSourceBefore([textCustomMessage("raw-1", "a")], "missing")).toBe(true);
+	});
+});
 
 describe("session-ledger V3 progress helpers", () => {
 	it("detects only raw/source entries as source entries", () => {

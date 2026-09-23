@@ -60,6 +60,18 @@ describe("session-ledger V3 projections", () => {
 		expect(visibleProjection(entries)).toEqual({ observations: [obs2], reflections: [ref1] });
 	});
 
+	it("shows no visible memory after a native compaction replaced the memory summary", () => {
+		const obs1 = observation("aaaaaaaaaaaa");
+		const entries = [
+			textCustomMessage("raw-1", "aaaa"),
+			compactionEntry("cmp-1", { firstKeptEntryId: "raw-1", details: memoryDetails({ observations: [obs1], reflections: [] }) }),
+			textCustomMessage("raw-2", "bbbb"),
+			compactionEntry("cmp-native", { firstKeptEntryId: "raw-2" }),
+		];
+
+		expect(visibleProjection(entries)).toEqual({ observations: [], reflections: [] });
+	});
+
 	it("ignores old V2 compaction details for visible projection", () => {
 		const entries = [
 			textCustomMessage("raw-1", "aaaa"),
