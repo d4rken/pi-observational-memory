@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { setMaxListeners } from "node:events";
 import type { AgentContext, AgentLoopConfig, AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message } from "@earendil-works/pi-ai";
 
@@ -56,3 +57,16 @@ export function workerTurnCap(maxTurns: number | undefined): Partial<AgentLoopCo
 	return hooks as Partial<AgentLoopConfig>;
 }
 
+/**
+ * A signal for one consolidation run that aborts with `parent`. `dispose()`
+ * detaches it, so the session-long parent keeps no listeners between runs.
+ */
+export function runSignal(parent: AbortSignal): { signal: AbortSignal; dispose: () => void } {
+	const controller = new AbortController();
+	// Provider clients add an abort listener per request and a run can make dozens of requests.
+	setMaxListeners(0, controller.signal);
+	const abort = () => controller.abort(parent.reason);
+	if (parent.aborted) abort();
+	else parent.addEventListener("abort", abort, { once: true });
+	return { signal: controller.signal, dispose: () => parent.removeEventListener("abort", abort) };
+}

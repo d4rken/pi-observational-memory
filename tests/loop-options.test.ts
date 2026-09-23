@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { workerSessionId, workerTurnCap } from "../src/agents/loop-options.js";
+import { getEventListeners } from "node:events";
+
+import { runSignal, workerSessionId, workerTurnCap } from "../src/agents/loop-options.js";
 
 describe("workerSessionId", () => {
 	it("suffixes the session id with the worker stage", () => {
@@ -49,5 +51,28 @@ describe("workerTurnCap", () => {
 		expect(shouldStopAfterTurn({})).toBe(false);
 		expect(finishTurn({ message: { stopReason: "toolUse" } })).toBeUndefined();
 		expect(shouldStopAfterTurn({})).toBe(true);
+	});
+});
+
+describe("runSignal", () => {
+	it("aborts with its parent and detaches on dispose", () => {
+		const parent = new AbortController();
+		const first = runSignal(parent.signal);
+		first.dispose();
+		const second = runSignal(parent.signal);
+
+		expect(getEventListeners(parent.signal, "abort")).toHaveLength(1);
+		parent.abort("session ended");
+
+		expect(first.signal.aborted).toBe(false);
+		expect(second.signal.aborted).toBe(true);
+		expect(second.signal.reason).toBe("session ended");
+	});
+
+	it("starts aborted under an aborted parent", () => {
+		const parent = new AbortController();
+		parent.abort();
+
+		expect(runSignal(parent.signal).signal.aborted).toBe(true);
 	});
 });

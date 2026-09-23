@@ -28,6 +28,7 @@ function captureHandler(args: { compactAfterTokens?: number; compactAfterTokensM
 		},
 		compactInFlight: args.compactInFlight ?? false,
 		consolidationPromise: null as Promise<void> | null,
+		shutdown: new AbortController(),
 		observerPromise: new Promise(() => {}),
 		reflectDropPromise: new Promise(() => {}),
 	};
@@ -125,6 +126,34 @@ describe("V3 compaction trigger", () => {
 		await vi.runAllTimersAsync();
 
 		expect(ctx.compact).toHaveBeenCalledTimes(1);
+	});
+
+	it("drops the pending compaction when the session ends while consolidation runs", async () => {
+		const { handler, runtime } = captureHandler({ compactAfterTokens: 3 });
+		let finish!: () => void;
+		runtime.consolidationPromise = new Promise<void>((resolve) => { finish = resolve; });
+		const ctx = fakeCtx([dueBranch]);
+
+		handler(agentSettled(), ctx);
+		runtime.shutdown.abort();
+		finish();
+		await vi.runAllTimersAsync();
+
+		expect(ctx.compact).not.toHaveBeenCalled();
+		expect(runtime.compactInFlight).toBe(false);
+	});
+
+	it("drops the compaction without notices when the session ends before it runs", async () => {
+		const { handler, runtime } = captureHandler({ compactAfterTokens: 3 });
+		const ctx = fakeCtx([dueBranch]);
+
+		handler(agentSettled(), ctx);
+		runtime.shutdown.abort();
+		await vi.runAllTimersAsync();
+
+		expect(ctx.compact).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
+		expect(runtime.compactInFlight).toBe(false);
 	});
 
 	it("skips passive mode", async () => {

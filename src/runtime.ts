@@ -102,6 +102,8 @@ export class Runtime {
 	consolidationInFlight = false;
 	consolidationPromise: Promise<void> | null = null;
 	consolidationPhase: ConsolidationPhase | undefined;
+	/** Aborted on `session_shutdown`; Pi loads a fresh extension instance for the next session. */
+	readonly shutdown = new AbortController();
 	compactInFlight = false;
 	compactHookInFlight = false;
 	resolveFailureNotified = false;
@@ -303,6 +305,7 @@ export class Runtime {
 		if (phase === "observer") this.lastObserverError = message;
 		if (phase === "reflector") this.lastReflectorError = message;
 		if (phase === "dropper") this.lastDropperError = message;
+		if (this.shutdown.signal.aborted) return message;
 		if (ctx.hasUI && ctx.ui) ctx.ui.notify(`Observational memory: ${phase} failed: ${message}`, "warning");
 		return message;
 	}
@@ -321,7 +324,7 @@ export class Runtime {
 				await work();
 			} catch (error) {
 				errorMessage = error instanceof Error ? error.message : String(error);
-				if (hasUI && ui) ui.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
+				if (hasUI && ui && !this.shutdown.signal.aborted) ui.notify(`Observational memory: ${label} failed: ${errorMessage}`, "warning");
 			} finally {
 				onFinally(errorMessage);
 			}

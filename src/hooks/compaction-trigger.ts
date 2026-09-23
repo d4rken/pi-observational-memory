@@ -29,13 +29,21 @@ export function registerCompactionTrigger(pi: ExtensionAPI, runtime: Runtime): v
 		if (pending) void pending.finally(startCompaction);
 		else startCompaction();
 
+		function sessionEnded(): boolean {
+			if (!runtime.shutdown.signal.aborted) return false;
+			runtime.compactInFlight = false;
+			return true;
+		}
+
 		function startCompaction(): void {
+			if (sessionEnded()) return;
 			if (hasUI) ui?.notify(
 				`Observational memory: compaction threshold reached (~${progress.toLocaleString()} estimated source tokens); triggering compaction`,
 				"info",
 			);
 
 			setTimeout(() => {
+				if (sessionEnded()) return;
 				try {
 					if (!ctx.isIdle()) {
 						runtime.compactInFlight = false;

@@ -4,6 +4,7 @@ const mockAgents = vi.hoisted(() => ({
 	runObserver: vi.fn(),
 	runReflector: vi.fn(),
 	runDropper: vi.fn(),
+	cleanupSessionResources: vi.fn(),
 }));
 
 vi.mock("../src/agents/observer/agent.js", async (importOriginal) => ({
@@ -12,6 +13,12 @@ vi.mock("../src/agents/observer/agent.js", async (importOriginal) => ({
 }));
 vi.mock("../src/agents/reflector/agent.js", () => ({ runReflector: mockAgents.runReflector }));
 vi.mock("../src/agents/dropper/agent.js", () => ({ runDropper: mockAgents.runDropper }));
+vi.mock("@earendil-works/pi-ai", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@earendil-works/pi-ai")>()),
+	cleanupSessionResources: mockAgents.cleanupSessionResources,
+}));
+
+import { getEventListeners } from "node:events";
 
 import { ObserverStreamError, type ObserverRun } from "../src/agents/observer/agent.js";
 import { registerConsolidationTrigger } from "../src/hooks/consolidation-trigger.js";
@@ -38,6 +45,7 @@ beforeEach(() => {
 	mockAgents.runObserver.mockReset();
 	mockAgents.runReflector.mockReset();
 	mockAgents.runDropper.mockReset();
+	mockAgents.cleanupSessionResources.mockReset();
 	mockAgents.runObserver.mockResolvedValue(undefined);
 	mockAgents.runReflector.mockResolvedValue(undefined);
 	mockAgents.runDropper.mockResolvedValue(undefined);
@@ -85,6 +93,7 @@ function setup(args: {
 			model: { provider: "anthropic", id: "memory", thinking: "minimal" },
 		},
 		consolidationInFlight: args.consolidationInFlight ?? false,
+		shutdown: new AbortController(),
 		consolidationPhase: undefined as "observer" | "reflector" | "dropper" | undefined,
 		resolveFailureNotified: false,
 		lastObserverError: undefined as string | undefined,
@@ -126,6 +135,7 @@ function setup(args: {
 		ctx,
 		fire: (eventName = "turn_end") => handlers[eventName]!(undefined, ctx),
 		fireAgentStart: () => handlers.agent_start!(undefined, ctx),
+		fireShutdown: () => handlers.session_shutdown!({ type: "session_shutdown", reason: "new" }, ctx),
 		fireTurnEnd: () => handlers.turn_end!(undefined, ctx),
 		runLaunchedWork: async () => launchedWork?.(),
 		addEntries: (...more: TestEntry[]) => {
@@ -591,14 +601,65 @@ describe("V3 consolidation trigger", () => {
 			observationsRecordedEntry("om-obs", { observations: [obsA], coversUpToId: "raw-1" }),
 			textCustomMessage("raw-2", "bbbbbbbb"),
 		];
-		const { fire, runLaunchedWork } = setup({ entries, observationsPoolTargetTokens: 5, sessionId: "session-abc" });
+		const { fire, runLaunchedWork, runtime } = setup({ entries, observationsPoolTargetTokens: 5, sessionId: "session-abc" });
 
 		fire();
 		await runLaunchedWork();
 
-		expect(mockAgents.runObserver).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-observer" }));
-		expect(mockAgents.runReflector).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-reflector" }));
-		expect(mockAgents.runDropper).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-dropper" }));
+		const signal = mockAgents.runObserver.mock.calls[0][0].signal;
+		expect(signal).toBeInstanceOf(AbortSignal);
+		expect(signal).not.toBe(runtime.shutdown.signal);
+		expect(mockAgents.runObserver).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-observer", signal }));
+		expect(mockAgents.runReflector).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-reflector", signal }));
+		expect(mockAgents.runDropper).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-dropper", signal }));
+		expect(getEventListeners(runtime.shutdown.signal, "abort")).toHaveLength(0);
+	});
+
+	it("stops at session shutdown without appending or warning", async () => {
+		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
+		const { fire, fireShutdown, runLaunchedWork, pi, ctx } = setup({ entries });
+		let workerSignal: AbortSignal | undefined;
+		mockAgents.runObserver.mockImplementationOnce(async (args: { signal: AbortSignal }) => {
+			workerSignal = args.signal;
+			fireShutdown();
+			return observed([obsA]);
+		});
+
+		fire();
+		await runLaunchedWork();
+
+		expect(workerSignal?.aborted).toBe(true);
+		expect(mockAgents.runObserver).toHaveBeenCalledTimes(1);
+		expect(mockAgents.runReflector).not.toHaveBeenCalled();
+		expect(pi.appendEntry).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).not.toHaveBeenCalledWith(expect.stringContaining("failed"), expect.anything());
+	});
+
+	it("releases worker session resources at session shutdown", () => {
+		const { fireShutdown } = setup({ entries: [], sessionId: "session-abc" });
+
+		fireShutdown();
+
+		expect(mockAgents.cleanupSessionResources.mock.calls.map(([key]) => key)).toEqual([
+			"session-abc:om-observer",
+			"session-abc:om-reflector",
+			"session-abc:om-dropper",
+		]);
+	});
+
+	it("skips the stage without notices when the session ends during model resolution", async () => {
+		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
+		const { fire, fireShutdown, runLaunchedWork, runtime, ctx } = setup({ entries });
+		runtime.resolveModel.mockImplementationOnce(async () => {
+			fireShutdown();
+			return { ok: true, model: { reasoning: true }, apiKey: "key", headers: { h: "v" } };
+		});
+
+		fire();
+		await runLaunchedWork();
+
+		expect(mockAgents.runObserver).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
 	});
 
 	it("covers an unfinished observer run only through the last source it cited", async () => {
@@ -611,6 +672,16 @@ describe("V3 consolidation trigger", () => {
 		await runLaunchedWork();
 
 		expect(pi.appendEntry).toHaveBeenCalledWith(OM_OBSERVATIONS_RECORDED, { observations: [cited], coversUpToId: "raw-1" });
+	});
+
+	it("does not launch after session shutdown", () => {
+		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
+		const { fire, fireShutdown, runtime } = setup({ entries });
+
+		fireShutdown();
+		fire();
+
+		expect(runtime.launchConsolidationTask).not.toHaveBeenCalled();
 	});
 
 	it("does not launch dropper-only work when active pool is over target", () => {
