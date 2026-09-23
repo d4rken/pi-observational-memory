@@ -43,6 +43,8 @@ interface RunDropperArgs {
 	apiKey?: string;
 	headers?: Record<string, string>;
 	env?: Record<string, string>;
+	/** Prompt-cache and affinity key; see `workerSessionId`. */
+	sessionId?: string;
 	reflections: Reflection[];
 	observations: Observation[];
 	targetTokens: number;
@@ -247,6 +249,7 @@ export async function runDropper(args: RunDropperArgs): Promise<string[] | undef
 		apiKey,
 		headers,
 		env,
+		sessionId: args.sessionId,
 		maxTokens: boundedMaxTokens(model, args.maxOutputTokens ?? AGENT_LOOP_MAX_TOKENS),
 		convertToLlm: (msgs) => msgs as Message[],
 		toolExecution: "sequential",

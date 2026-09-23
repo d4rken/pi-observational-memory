@@ -268,6 +268,7 @@ describe("V3 consolidation trigger", () => {
 		expect(mockAgents.runObserver).toHaveBeenCalledWith(expect.objectContaining({
 			apiKey: "go-key",
 			headers: { "x-opencode-session": "session-abc", "x-opencode-client": "pi" },
+			sessionId: "session-abc:om-observer",
 		}));
 		expect(pi.appendEntry).toHaveBeenCalledWith(OM_OBSERVATIONS_RECORDED, { observations: [obs], coversUpToId: "raw-1" });
 	});
@@ -574,6 +575,26 @@ describe("V3 consolidation trigger", () => {
 		expect(mockAgents.runDropper).toHaveBeenCalledWith(expect.objectContaining({ reflections: [newRef], observations: [obsA] }));
 		expect(pi.appendEntry.mock.calls[0]).toEqual([OM_REFLECTIONS_RECORDED, { reflections: [newRef], coversUpToId: "raw-1" }]);
 		expect(pi.appendEntry.mock.calls[1]).toEqual([OM_OBSERVATIONS_DROPPED, { observationIds: ["aaaaaaaaaaaa"], coversUpToId: "raw-1" }]);
+	});
+
+	it("keys each worker by its own derivative of the session id", async () => {
+		const newRef = reflection("ffffffffffff", ["aaaaaaaaaaaa"]);
+		mockAgents.runObserver.mockResolvedValueOnce([obsB]);
+		mockAgents.runReflector.mockResolvedValueOnce([newRef]);
+		mockAgents.runDropper.mockResolvedValueOnce(["aaaaaaaaaaaa"]);
+		const entries = [
+			textCustomMessage("raw-1", "aaaaaaaa"),
+			observationsRecordedEntry("om-obs", { observations: [obsA], coversUpToId: "raw-1" }),
+			textCustomMessage("raw-2", "bbbbbbbb"),
+		];
+		const { fire, runLaunchedWork } = setup({ entries, observationsPoolTargetTokens: 5, sessionId: "session-abc" });
+
+		fire();
+		await runLaunchedWork();
+
+		expect(mockAgents.runObserver).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-observer" }));
+		expect(mockAgents.runReflector).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-reflector" }));
+		expect(mockAgents.runDropper).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-dropper" }));
 	});
 
 	it("does not launch dropper-only work when active pool is over target", () => {

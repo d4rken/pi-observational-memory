@@ -17,6 +17,8 @@ interface RunObserverArgs {
 	apiKey?: string;
 	headers?: Record<string, string>;
 	env?: Record<string, string>;
+	/** Prompt-cache and affinity key; see `workerSessionId`. */
+	sessionId?: string;
 	priorReflections: string[];
 	priorObservations: string[];
 	chunk: string;
@@ -164,13 +166,14 @@ export async function runObserver(args: RunObserverArgs): Promise<Observation[] 
 	};
 
 	const now = nowTimestamp();
-	const userText = `Current local time: ${now}
-
-CURRENT REFLECTIONS:
+	// Prior memory only grows between runs, so it goes first where a prompt cache can reuse it.
+	const userText = `CURRENT REFLECTIONS:
 ${joinOrEmpty(priorReflections)}
 
 CURRENT OBSERVATIONS:
 ${joinOrEmpty(priorObservations)}
+
+Current local time: ${now}
 
 Compress the following new conversation chunk into observations by calling record_observations one or more times. Do not restate facts already present in current reflections or current observations. Prefer inline conversation timestamps when assigning times; fall back to the current local time above only if no message timestamp applies. Stop calling the tool and reply with a short plain-text confirmation once the chunk is fully covered.
 
@@ -186,6 +189,7 @@ ${conversation}`;
 		apiKey,
 		headers,
 		env,
+		sessionId: args.sessionId,
 		maxTokens: boundedMaxTokens(model, args.maxOutputTokens ?? AGENT_LOOP_MAX_TOKENS),
 		convertToLlm: (msgs) => msgs as Message[],
 		toolExecution: "sequential",

@@ -68,6 +68,7 @@ describe("worker requests through the real agent loop", () => {
 		const requests: Request[] = [];
 		const observations = await runObserver({
 			...observerArgs,
+			sessionId: "session-1:om-observer",
 			streamSimple: scriptedStream([
 				toolTurn("record_observations", { observations: [recordedObservation] }),
 			], requests) as any,
@@ -79,6 +80,7 @@ describe("worker requests through the real agent loop", () => {
 			role: "system",
 			toolsAdded: [expect.objectContaining({ name: "record_observations" })],
 		});
+		expect(requests.map((request) => request.options?.sessionId)).toEqual(["session-1:om-observer", "session-1:om-observer"]);
 	});
 
 	it("stops the observer at the turn cap", async () => {
@@ -96,7 +98,7 @@ describe("worker requests through the real agent loop", () => {
 		expect(requests).toHaveLength(2);
 	});
 
-	it("sends the reflector and dropper prompts", async () => {
+	it("sends the reflector and dropper prompts and session keys", async () => {
 		const obs = observation("aaaaaaaaaaaa", { tokenCount: 50 });
 		const requests: Request[] = [];
 
@@ -104,6 +106,7 @@ describe("worker requests through the real agent loop", () => {
 			model,
 			reflections: [],
 			observations: [obs],
+			sessionId: "session-1:om-reflector",
 			streamSimple: scriptedStream([], requests) as any,
 		});
 		await runDropper({
@@ -111,11 +114,14 @@ describe("worker requests through the real agent loop", () => {
 			reflections: [],
 			observations: [obs],
 			targetTokens: 1,
+			sessionId: "session-1:om-dropper",
 			streamSimple: scriptedStream([], requests) as any,
 		});
 
 		expect(requests).toHaveLength(2);
 		expect(systemText(requests[0])).toBe(REFLECTOR_SYSTEM);
+		expect(requests[0].options?.sessionId).toBe("session-1:om-reflector");
 		expect(systemText(requests[1])).toBe(DROPPER_SYSTEM);
+		expect(requests[1].options?.sessionId).toBe("session-1:om-dropper");
 	});
 });

@@ -3,6 +3,7 @@ import { runDropper } from "../agents/dropper/agent.js";
 import { observationPoolMetrics } from "../agents/dropper/pool.js";
 import { ObserverStreamError, runObserver } from "../agents/observer/agent.js";
 import { runReflector } from "../agents/reflector/agent.js";
+import { workerSessionId } from "../agents/loop-options.js";
 import { debugLog, withDebugLogContext } from "../debug-log.js";
 import { resolveObserverChunkMaxTokens } from "../config.js";
 import type { ResolveResult, Runtime } from "../runtime.js";
@@ -170,6 +171,10 @@ function debugSessionMetadata(ctx: ConsolidationCtx): { sessionId?: string; sess
 	}
 }
 
+function currentSessionId(ctx: ConsolidationCtx): string | undefined {
+	return debugSessionMetadata(ctx).sessionId;
+}
+
 function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: ConsolidationCtx): void {
 	runtime.ensureConfig(ctx.cwd);
 	if (runtime.config.passive === true) return;
@@ -328,6 +333,7 @@ async function runObserverStage(
 			apiKey: resolved.apiKey,
 			headers: resolved.headers,
 			env: resolved.env,
+			sessionId: workerSessionId(currentSessionId(ctx), "observer"),
 			priorReflections,
 			priorObservations,
 			chunk,
@@ -403,6 +409,7 @@ async function runReflectorStage(
 		apiKey: resolved.apiKey,
 		headers: resolved.headers,
 		env: resolved.env,
+		sessionId: workerSessionId(currentSessionId(ctx), "reflector"),
 		reflections: folded.reflections,
 		observations: folded.activeObservations,
 		maxTurns: runtime.config.agentMaxTurns,
@@ -478,6 +485,7 @@ async function runDropperStage(
 		apiKey: resolved.apiKey,
 		headers: resolved.headers,
 		env: resolved.env,
+		sessionId: workerSessionId(currentSessionId(ctx), "dropper"),
 		reflections: reflectionsForDropper,
 		observations: folded.activeObservations,
 		targetTokens: runtime.config.observationsPoolTargetTokens,

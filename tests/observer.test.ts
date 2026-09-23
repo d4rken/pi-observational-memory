@@ -92,6 +92,18 @@ describe("runObserver", () => {
 		allowedSourceEntryIds: ["entry-a"],
 	};
 
+	it("puts prior memory before the per-run timestamp", async () => {
+		let userText = "";
+		const loop = fakeAgentLoop((prompts) => {
+			userText = prompts[1].content[0].text;
+		});
+
+		await runObserver({ ...baseArgs, priorReflections: ["[r] fact"], priorObservations: ["[o] event"], agentLoop: loop });
+
+		expect(userText.indexOf("CURRENT OBSERVATIONS:\n[o] event")).toBeGreaterThan(userText.indexOf("CURRENT REFLECTIONS:\n[r] fact"));
+		expect(userText.indexOf("Current local time:")).toBeGreaterThan(userText.indexOf("[o] event"));
+	});
+
 	it("keeps core observer prompt rules", async () => {
 		let systemPrompt = "";
 		const loop = fakeAgentLoop((prompts) => {

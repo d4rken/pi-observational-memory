@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { workerTurnCap } from "../src/agents/loop-options.js";
+import { workerSessionId, workerTurnCap } from "../src/agents/loop-options.js";
+
+describe("workerSessionId", () => {
+	it("suffixes the session id with the worker stage", () => {
+		expect(workerSessionId("0198c6f2-7a1b-7c3d-8e4f-5a6b7c8d9e0f", "observer")).toBe("0198c6f2-7a1b-7c3d-8e4f-5a6b7c8d9e0f:om-observer");
+		expect(workerSessionId(undefined, "dropper")).toBeUndefined();
+		expect(workerSessionId("", "dropper")).toBeUndefined();
+	});
+
+	it("hashes a long session id so the stage suffix survives a 64-character key limit", () => {
+		const long = "x".repeat(80);
+		const observer = workerSessionId(long, "observer")!;
+		const reflector = workerSessionId(long, "reflector")!;
+
+		expect(observer).toMatch(/^[a-f0-9]{32}:om-observer$/);
+		expect(reflector).toMatch(/^[a-f0-9]{32}:om-reflector$/);
+		expect(observer.slice(0, 32)).toBe(reflector.slice(0, 32));
+		expect(workerSessionId(`${long}y`, "observer")).not.toBe(observer);
+	});
+});
 
 describe("workerTurnCap", () => {
 	it("is absent without a positive cap", () => {
