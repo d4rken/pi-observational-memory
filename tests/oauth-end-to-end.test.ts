@@ -2,8 +2,10 @@ import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { streamSimple } from "@earendil-works/pi-ai/compat";
 import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
+import { OBSERVER_SYSTEM } from "../src/agents/observer/prompts.js";
 import { DEFAULTS } from "../src/config.js";
 import { registerConsolidationTrigger } from "../src/hooks/consolidation-trigger.js";
 import { Runtime } from "../src/runtime.js";
@@ -94,6 +96,7 @@ function oauthModelRegistry(): any {
 		getAuth: async () => undefined,
 		getCompatibilityRequestConfig: () => ({ headers: { Authorization: OAUTH_TOKEN }, authHeader: false }),
 		isUsingOAuth: (providerId: string) => providerId === "kimi-coding",
+		streamSimple,
 	} as any);
 }
 
@@ -103,6 +106,7 @@ function expiredOAuthModelRegistry(provider: string): any {
 		getAuth: async () => undefined,
 		getCompatibilityRequestConfig: () => ({ headers: undefined, authHeader: true }),
 		isUsingOAuth: (providerId: string) => providerId === provider,
+		streamSimple,
 	} as any);
 }
 
@@ -162,6 +166,7 @@ describe("OAuth provider end-to-end consolidation", () => {
 
 		// The observer really called the provider, authenticating with the OAuth header.
 		expect(requests).toHaveLength(1);
+		expect(JSON.stringify(requests[0].body.system)).toContain(JSON.stringify(OBSERVER_SYSTEM).slice(1, 80));
 		expect(requests[0].headers.authorization).toBe(OAUTH_TOKEN);
 		expect(requests[0].headers["x-api-key"]).toBeUndefined();
 

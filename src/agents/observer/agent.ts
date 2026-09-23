@@ -1,8 +1,9 @@
-import { agentLoop, type AgentContext, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
+import { agentLoop, type AgentLoopConfig, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Type } from "@earendil-works/pi-ai";
 import type { Static } from "typebox";
 import { hashId } from "../../ids.js";
+import { workerRun, workerTurnCap } from "../loop-options.js";
 import { logAgentStreamError } from "../stream-errors.js";
 import { resolveWorkerStreamSimple, type StreamableModelRegistry, type WorkerStreamSimple } from "../worker-stream.js";
 import { AGENT_LOOP_MAX_TOKENS, boundedMaxTokens } from "../../model-budget.js";
@@ -176,24 +177,10 @@ Compress the following new conversation chunk into observations by calling recor
 NEW CONVERSATION CHUNK:
 ${conversation}`;
 
-	const prompts: Message[] = [
-		{
-			role: "user",
-			content: [{ type: "text", text: userText }],
-			timestamp: Date.now(),
-		},
-	];
-
-	const context: AgentContext = {
-		systemPrompt: OBSERVER_SYSTEM,
-		messages: [],
-		tools: [recordObservations as AgentTool<any>],
-	};
+	const { prompts, context } = workerRun(OBSERVER_SYSTEM, userText, recordObservations as AgentTool<any>);
 
 	const reasoning = (model as { reasoning?: unknown }).reasoning;
 	const thinkingLevel = args.thinkingLevel ?? "low";
-	const effectiveMaxTurns = args.maxTurns && args.maxTurns > 0 ? args.maxTurns : undefined;
-	let turnCount = 0;
 	const config: AgentLoopConfig = {
 		model,
 		apiKey,
@@ -203,14 +190,7 @@ ${conversation}`;
 		convertToLlm: (msgs) => msgs as Message[],
 		toolExecution: "sequential",
 		...(reasoning && thinkingLevel !== "off" ? { reasoning: thinkingLevel } : {}),
-		...(effectiveMaxTurns !== undefined
-			? {
-				shouldStopAfterTurn: () => {
-					turnCount++;
-					return turnCount >= effectiveMaxTurns;
-				},
-			}
-			: {}),
+		...workerTurnCap(args.maxTurns),
 	};
 
 	const loop = args.agentLoop ?? agentLoop;

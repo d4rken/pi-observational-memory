@@ -94,8 +94,8 @@ describe("runObserver", () => {
 
 	it("keeps core observer prompt rules", async () => {
 		let systemPrompt = "";
-		const loop = fakeAgentLoop((_prompts, context) => {
-			systemPrompt = context.systemPrompt;
+		const loop = fakeAgentLoop((prompts) => {
+			systemPrompt = prompts[0]?.role === "system" ? prompts[0].content : "";
 		});
 
 		await runObserver({ ...baseArgs, agentLoop: loop });

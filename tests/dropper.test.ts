@@ -118,8 +118,8 @@ describe("V3 dropper agent", () => {
 
 	it("keeps core dropper safety guidance in V3 terms", async () => {
 		let systemPrompt = "";
-		const loop = fakeAgentLoop((_prompts, context) => {
-			systemPrompt = context.systemPrompt;
+		const loop = fakeAgentLoop((prompts) => {
+			systemPrompt = prompts[0]?.role === "system" ? prompts[0].content : "";
 		});
 
 		await runDropper({ ...baseArgs, agentLoop: loop });
@@ -149,7 +149,7 @@ describe("V3 dropper agent", () => {
 	it("passes target-return max drops as a hard upper bound", async () => {
 		let userText = "";
 		const loop = fakeAgentLoop((prompts) => {
-			userText = prompts[0].content[0].text;
+			userText = prompts[1].content[0].text;
 		});
 
 		await runDropper({ ...baseArgs, agentLoop: loop });

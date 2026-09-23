@@ -173,7 +173,7 @@ This extension is especially useful when the session contains decisions that sho
 
 ## Install
 
-Requires Pi 0.81.0 or newer. Proactive compaction uses the `agent_settled` lifecycle event introduced in that release.
+Requires Pi 0.86.0 or newer. Memory workers send their instructions as a leading system message, which Pi's agent loop carries since 0.86.
 
 ```bash
 pi install npm:pi-observational-memory

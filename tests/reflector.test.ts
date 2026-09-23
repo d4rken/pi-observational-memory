@@ -83,8 +83,8 @@ describe("V3 reflector agent", () => {
 
 	it("keeps core reflector prompt guidance in V3 terms", async () => {
 		let systemPrompt = "";
-		const loop = fakeAgentLoop((_prompts, context) => {
-			systemPrompt = context.systemPrompt;
+		const loop = fakeAgentLoop((prompts) => {
+			systemPrompt = prompts[0]?.role === "system" ? prompts[0].content : "";
 		});
 
 		await runReflector({ ...baseArgs, agentLoop: loop });
@@ -148,7 +148,7 @@ describe("V3 reflector agent", () => {
 		const strong = observation("cccccccccccc", { content: "Strongly covered fact" });
 		let userText = "";
 		const loop = fakeAgentLoop((prompts) => {
-			userText = prompts[0].content[0].text;
+			userText = prompts[1].content[0].text;
 		});
 
 		await runReflector({
