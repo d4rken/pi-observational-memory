@@ -13,7 +13,7 @@ vi.mock("../src/agents/observer/agent.js", async (importOriginal) => ({
 vi.mock("../src/agents/reflector/agent.js", () => ({ runReflector: mockAgents.runReflector }));
 vi.mock("../src/agents/dropper/agent.js", () => ({ runDropper: mockAgents.runDropper }));
 
-import { ObserverStreamError } from "../src/agents/observer/agent.js";
+import { ObserverStreamError, type ObserverRun } from "../src/agents/observer/agent.js";
 import { registerConsolidationTrigger } from "../src/hooks/consolidation-trigger.js";
 import {
 	OM_OBSERVATIONS_DROPPED,
@@ -29,6 +29,10 @@ import {
 	textCustomMessage,
 	type TestEntry,
 } from "./fixtures/session.js";
+
+function observed(observations: ObserverRun["observations"], complete = true): ObserverRun {
+	return { observations, complete };
+}
 
 beforeEach(() => {
 	mockAgents.runObserver.mockReset();
@@ -213,7 +217,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("runs observer first and appends source-addressed observations", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, pi, runtime } = setup({ entries, reflectAfterTokens: 999 });
 
@@ -231,7 +235,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("forwards OAuth-shaped auth (headers, no apiKey) to the observer agent", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, pi, runtime } = setup({ entries, reflectAfterTokens: 999 });
 		runtime.resolveModel.mockResolvedValueOnce({
@@ -253,7 +257,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("adds x-opencode-session headers for opencode-go worker models", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, pi, runtime } = setup({ entries, reflectAfterTokens: 999, sessionId: "session-abc" });
 		runtime.resolveModel.mockResolvedValueOnce({
@@ -275,7 +279,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("merges x-opencode-session with existing auth headers and preserves them", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, runtime } = setup({ entries, reflectAfterTokens: 999, sessionId: "session-1" });
 		runtime.resolveModel.mockResolvedValueOnce({
@@ -299,7 +303,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("detects opencode hosts by baseUrl even when provider is generic", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, runtime } = setup({ entries, reflectAfterTokens: 999, sessionId: "session-1" });
 		runtime.resolveModel.mockResolvedValueOnce({
@@ -318,7 +322,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("leaves headers untouched for non-opencode worker models", async () => {
 		const obs = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
 		const { fire, runLaunchedWork, runtime } = setup({ entries, reflectAfterTokens: 999, sessionId: "session-1" });
 		runtime.resolveModel.mockResolvedValueOnce({
@@ -339,7 +343,7 @@ describe("V3 consolidation trigger", () => {
 	it("uses existing observation coverage and retries larger ranges after no-output", async () => {
 		const prior = observation("cccccccccccc", { sourceEntryIds: ["raw-1"] });
 		const newObs = observation("dddddddddddd", { sourceEntryIds: ["raw-2"] });
-		mockAgents.runObserver.mockResolvedValueOnce([newObs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([newObs]));
 		const entries = [
 			textCustomMessage("raw-1", "aaaa"),
 			observationsRecordedEntry("om-prior", { observations: [prior], coversUpToId: "raw-1" }),
@@ -369,7 +373,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("shows routine worker notifications by default", async () => {
 		const newRef = reflection("ffffffffffff", ["aaaaaaaaaaaa"]);
-		mockAgents.runObserver.mockResolvedValueOnce([obsA]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obsA]));
 		mockAgents.runReflector.mockResolvedValueOnce([newRef]);
 		mockAgents.runDropper.mockResolvedValueOnce(["aaaaaaaaaaaa"]);
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
@@ -388,7 +392,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("suppresses routine worker notifications without hiding warnings", async () => {
 		const newRef = reflection("ffffffffffff", ["aaaaaaaaaaaa"]);
-		mockAgents.runObserver.mockResolvedValueOnce([obsA]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obsA]));
 		mockAgents.runReflector.mockResolvedValueOnce([newRef]);
 		mockAgents.runDropper.mockResolvedValueOnce(["aaaaaaaaaaaa"]);
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
@@ -462,7 +466,7 @@ describe("V3 consolidation trigger", () => {
 		// 10 more new tokens: backoff satisfied, observer re-fires over the grown span.
 		addEntries(textCustomMessage("raw-3", "c".repeat(40)));
 		runtime.consolidationInFlight = false;
-		mockAgents.runObserver.mockResolvedValueOnce([obsA]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obsA]));
 		fire();
 		await runLaunchedWork();
 		expect(mockAgents.runObserver).toHaveBeenCalledTimes(2);
@@ -522,7 +526,7 @@ describe("V3 consolidation trigger", () => {
 	});
 
 	it("re-reads branch so observer append can unblock reflector in the same consolidation run", async () => {
-		mockAgents.runObserver.mockResolvedValueOnce([obsA]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obsA]));
 		const newRef = reflection("ffffffffffff", ["aaaaaaaaaaaa"]);
 		mockAgents.runReflector.mockResolvedValueOnce([newRef]);
 		const entries = [textCustomMessage("raw-1", "aaaaaaaa")];
@@ -579,7 +583,7 @@ describe("V3 consolidation trigger", () => {
 
 	it("keys each worker by its own derivative of the session id", async () => {
 		const newRef = reflection("ffffffffffff", ["aaaaaaaaaaaa"]);
-		mockAgents.runObserver.mockResolvedValueOnce([obsB]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obsB]));
 		mockAgents.runReflector.mockResolvedValueOnce([newRef]);
 		mockAgents.runDropper.mockResolvedValueOnce(["aaaaaaaaaaaa"]);
 		const entries = [
@@ -595,6 +599,18 @@ describe("V3 consolidation trigger", () => {
 		expect(mockAgents.runObserver).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-observer" }));
 		expect(mockAgents.runReflector).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-reflector" }));
 		expect(mockAgents.runDropper).toHaveBeenCalledWith(expect.objectContaining({ sessionId: "session-abc:om-dropper" }));
+	});
+
+	it("covers an unfinished observer run only through the last source it cited", async () => {
+		const cited = observation("cccccccccccc", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
+		mockAgents.runObserver.mockResolvedValueOnce(observed([cited], false));
+		const entries = [textCustomMessage("raw-1", "aaaaaaaa"), textCustomMessage("raw-2", "bbbbbbbb")];
+		const { fire, runLaunchedWork, pi } = setup({ entries, reflectAfterTokens: 999 });
+
+		fire();
+		await runLaunchedWork();
+
+		expect(pi.appendEntry).toHaveBeenCalledWith(OM_OBSERVATIONS_RECORDED, { observations: [cited], coversUpToId: "raw-1" });
 	});
 
 	it("does not launch dropper-only work when active pool is over target", () => {
@@ -780,7 +796,7 @@ describe("observer chunk cap", () => {
 	it("caps an oversized backlog and drains it incrementally across runs", async () => {
 		const first = observation("111111111111", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
 		const second = observation("222222222222", { sourceEntryIds: ["raw-2"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([first]).mockResolvedValueOnce([second]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([first])).mockResolvedValueOnce(observed([second]));
 		const entries = [
 			textCustomMessage("raw-1", "a".repeat(800)),
 			textCustomMessage("raw-2", "b".repeat(800)),
@@ -807,7 +823,7 @@ describe("observer chunk cap", () => {
 	it("bounds one oversized tool result, preserves provenance, and continues on the next run", async () => {
 		const first = observation("333333333333", { sourceEntryIds: ["raw-huge"], tokenCount: 4 });
 		const second = observation("555555555555", { sourceEntryIds: ["raw-next"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([first]).mockResolvedValueOnce([second]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([first])).mockResolvedValueOnce(observed([second]));
 		const hugeText = `HEAD:${"m".repeat(2_000)}:TAIL`;
 		const entries: TestEntry[] = [
 			{
@@ -851,7 +867,7 @@ describe("observer chunk cap", () => {
 
 	it("derives the cap from the resolved model's context window when not configured", async () => {
 		const obs = observation("444444444444", { sourceEntryIds: ["raw-1"], tokenCount: 4 });
-		mockAgents.runObserver.mockResolvedValueOnce([obs]);
+		mockAgents.runObserver.mockResolvedValueOnce(observed([obs]));
 		const entries = [
 			textCustomMessage("raw-1", "a".repeat(800)),
 			textCustomMessage("raw-2", "b".repeat(800)),

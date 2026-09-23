@@ -78,6 +78,7 @@ async function startMockAnthropic(requests: RecordedRequest[]): Promise<{ server
 					relevance: "high",
 					sourceEntryIds: ["raw-1"],
 				}],
+				complete: true,
 			}));
 		});
 	});
@@ -150,7 +151,7 @@ describe("OAuth provider end-to-end consolidation", () => {
 
 		const runtime = new Runtime();
 		runtime.configLoaded = true;
-		runtime.config = { ...DEFAULTS, observeAfterTokens: 1, reflectAfterTokens: 1_000_000, agentMaxTurns: 1 };
+		runtime.config = { ...DEFAULTS, observeAfterTokens: 1, reflectAfterTokens: 1_000_000 };
 
 		registerConsolidationTrigger(pi as any, runtime);
 
@@ -165,6 +166,7 @@ describe("OAuth provider end-to-end consolidation", () => {
 		await runtime.consolidationPromise;
 
 		// The observer really called the provider, authenticating with the OAuth header.
+		// A complete batch ends the run, so no confirmation request follows.
 		expect(requests).toHaveLength(1);
 		expect(JSON.stringify(requests[0].body.system)).toContain(JSON.stringify(OBSERVER_SYSTEM).slice(1, 80));
 		expect(requests[0].headers.authorization).toBe(OAUTH_TOKEN);

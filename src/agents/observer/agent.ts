@@ -66,6 +66,9 @@ const RecordObservationsSchema = Type.Object({
 		}),
 		{ description: "Batch of new observations. May be empty only if the tool is not called at all." },
 	),
+	complete: Type.Optional(Type.Boolean({
+		description: "Whether this batch completes chunk coverage. Set false when more observations or corrections remain.",
+	})),
 });
 
 type RecordObservationsArgs = Static<typeof RecordObservationsSchema>;
@@ -84,6 +87,12 @@ export class ObserverStreamError extends Error {
 		this.stopReason = stopReason;
 	}
 }
+
+export type ObserverRun = {
+	observations: Observation[];
+	/** False when the loop stopped before the model finished the chunk (turn cap, error). */
+	complete: boolean;
+};
 
 function joinOrEmpty(items: string[]): string {
 	return items.length ? items.join("\n") : "(none yet)";
@@ -106,20 +115,21 @@ export function normalizeSourceEntryIds(
 	return Array.from(seen).sort((a, b) => (allowedOrder.get(a) ?? 0) - (allowedOrder.get(b) ?? 0));
 }
 
-export async function runObserver(args: RunObserverArgs): Promise<Observation[] | undefined> {
+export async function runObserver(args: RunObserverArgs): Promise<ObserverRun | undefined> {
 	const { model, apiKey, headers, env, priorReflections, priorObservations, chunk, allowedSourceEntryIds, signal } = args;
 	const conversation = chunk.trim();
 	if (!conversation) return undefined;
 
 	const accumulated = new Map<string, Observation>();
+	let completedBatch = false;
 
 	const recordObservations: AgentTool<typeof RecordObservationsSchema> = {
 		name: "record_observations",
 		label: "Record observations",
 		description:
 			"Record a batch of new observations distilled from the conversation chunk. " +
-			"Call this multiple times as you work through the chunk. Stop calling when coverage is complete, " +
-			"then emit a short plain-text confirmation to end the run.",
+			"complete=true ends fully valid chunk coverage; use complete=false when more observations or corrections remain. " +
+			"Incomplete or rejected work stays open.",
 		parameters: RecordObservationsSchema,
 		execute: async (_id, params: RecordObservationsArgs) => {
 			let added = 0;
@@ -160,8 +170,14 @@ export async function runObserver(args: RunObserverArgs): Promise<Observation[] 
 				(duplicates > 0 ? `(${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped).` : ".") +
 				rejectedPart +
 				` Total so far this run: ${accumulated.size}. ` +
-				`Continue if the chunk still has uncovered content; otherwise stop calling the tool and emit a short plain-text confirmation.`;
-			return { content: [{ type: "text", text: ack }], details: { added, duplicates, rejected, total: accumulated.size } };
+				`Continue with complete=false while content remains or corrections are needed; use complete=true on the final valid batch.`;
+			const terminate = params.complete === true && rejected === 0;
+			if (terminate) completedBatch = true;
+			return {
+				content: [{ type: "text", text: ack }],
+				details: { added, duplicates, rejected, total: accumulated.size },
+				terminate,
+			};
 		},
 	};
 
@@ -175,7 +191,7 @@ ${joinOrEmpty(priorObservations)}
 
 Current local time: ${now}
 
-Compress the following new conversation chunk into observations by calling record_observations one or more times. Do not restate facts already present in current reflections or current observations. Prefer inline conversation timestamps when assigning times; fall back to the current local time above only if no message timestamp applies. Stop calling the tool and reply with a short plain-text confirmation once the chunk is fully covered.
+Compress the following new conversation chunk into observations by calling record_observations one or more times. Use complete=false for partial batches or corrections, and use complete=true only on the final valid batch after the chunk is fully covered. If no observations are warranted, do not call the tool and reply with a short plain-text confirmation. Do not restate facts already present in current reflections or current observations. Prefer inline conversation timestamps when assigning times; fall back to the current local time above only if no message timestamp applies.
 
 NEW CONVERSATION CHUNK:
 ${conversation}`;
@@ -206,12 +222,14 @@ ${conversation}`;
 		resolveWorkerStreamSimple(model, args.modelRegistry, args.streamSimple),
 	);
 	let streamError: { stopReason: string; errorMessage?: string } | undefined;
+	let lastStopReason: string | undefined;
 	for await (const event of stream) {
 		// Drain events; the tool's execute already collects records.
 		logAgentStreamError("observer", event);
 		// Watch for a terminal API/stream failure so it is not conflated with
 		// a deliberate empty result.
 		const message = (event as { message?: { role?: string; stopReason?: string; errorMessage?: string } }).message;
+		if (event.type === "message_end" && message?.role === "assistant") lastStopReason = message.stopReason;
 		if (message?.role === "assistant" && (message.stopReason === "error" || message.stopReason === "aborted")) {
 			streamError = { stopReason: message.stopReason, errorMessage: message.errorMessage };
 		}
@@ -222,5 +240,6 @@ ${conversation}`;
 		if (streamError) throw new ObserverStreamError(streamError.stopReason, streamError.errorMessage);
 		return undefined;
 	}
-	return Array.from(accumulated.values());
+	// A plain-text reply is the model saying it is done; anything else stopped it early.
+	return { observations: Array.from(accumulated.values()), complete: completedBatch || lastStopReason === "stop" };
 }

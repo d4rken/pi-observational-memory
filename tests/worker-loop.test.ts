@@ -64,38 +64,72 @@ const observerArgs = {
 };
 
 describe("worker requests through the real agent loop", () => {
-	it("sends the observer prompt with its tool on the leading system message", async () => {
+	it("sends the observer prompt, tool and session key, and ends on a complete batch", async () => {
 		const requests: Request[] = [];
-		const observations = await runObserver({
+		const run = await runObserver({
 			...observerArgs,
 			sessionId: "session-1:om-observer",
 			streamSimple: scriptedStream([
-				toolTurn("record_observations", { observations: [recordedObservation] }),
+				toolTurn("record_observations", { observations: [recordedObservation], complete: true }),
 			], requests) as any,
 		});
 
-		expect(observations?.map((item) => item.content)).toEqual(["User asked for a memory update."]);
+		expect(run?.observations.map((item) => item.content)).toEqual(["User asked for a memory update."]);
+		expect(run?.complete).toBe(true);
+		expect(requests).toHaveLength(1);
 		expect(systemText(requests[0])).toBe(OBSERVER_SYSTEM);
 		expect(requests[0].context.messages[0]).toMatchObject({
 			role: "system",
 			toolsAdded: [expect.objectContaining({ name: "record_observations" })],
 		});
-		expect(requests.map((request) => request.options?.sessionId)).toEqual(["session-1:om-observer", "session-1:om-observer"]);
+		expect(requests[0].options?.sessionId).toBe("session-1:om-observer");
 	});
 
-	it("stops the observer at the turn cap", async () => {
+	it("keeps the observer running after an incomplete or rejected batch", async () => {
 		const requests: Request[] = [];
 		await runObserver({
 			...observerArgs,
+			streamSimple: scriptedStream([
+				toolTurn("record_observations", { observations: [recordedObservation], complete: false }),
+				toolTurn("record_observations", {
+					observations: [{ ...recordedObservation, content: "Invented source.", sourceEntryIds: ["entry-x"] }],
+					complete: true,
+				}),
+				toolTurn("record_observations", { observations: [], complete: true }),
+			], requests) as any,
+		});
+
+		expect(requests).toHaveLength(3);
+	});
+
+	it("stops the observer at the turn cap and reports the run incomplete", async () => {
+		const requests: Request[] = [];
+		const run = await runObserver({
+			...observerArgs,
 			maxTurns: 2,
 			streamSimple: scriptedStream([
-				toolTurn("record_observations", { observations: [recordedObservation] }),
-				toolTurn("record_observations", { observations: [] }),
-				toolTurn("record_observations", { observations: [] }),
+				toolTurn("record_observations", { observations: [recordedObservation], complete: false }),
+				toolTurn("record_observations", { observations: [], complete: false }),
+				toolTurn("record_observations", { observations: [], complete: false }),
 			], requests) as any,
 		});
 
 		expect(requests).toHaveLength(2);
+		expect(run?.complete).toBe(false);
+	});
+
+	it("treats a plain-text reply after recording as a finished run", async () => {
+		const requests: Request[] = [];
+		const run = await runObserver({
+			...observerArgs,
+			streamSimple: scriptedStream([
+				toolTurn("record_observations", { observations: [recordedObservation] }),
+				fauxAssistantMessage("Chunk covered."),
+			], requests) as any,
+		});
+
+		expect(requests).toHaveLength(2);
+		expect(run?.complete).toBe(true);
 	});
 
 	it("sends the reflector and dropper prompts and session keys", async () => {
@@ -107,7 +141,12 @@ describe("worker requests through the real agent loop", () => {
 			reflections: [],
 			observations: [obs],
 			sessionId: "session-1:om-reflector",
-			streamSimple: scriptedStream([], requests) as any,
+			streamSimple: scriptedStream([
+				toolTurn("record_reflections", {
+					reflections: [{ content: "User prefers terse replies.", supportingObservationIds: ["aaaaaaaaaaaa"] }],
+					complete: true,
+				}),
+			], requests) as any,
 		});
 		await runDropper({
 			model,

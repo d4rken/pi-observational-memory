@@ -131,7 +131,7 @@ describe("runObserver", () => {
 			});
 		});
 
-		const observations = await runObserver({ ...baseArgs, agentLoop: loop });
+		const observations = (await runObserver({ ...baseArgs, agentLoop: loop }))?.observations;
 
 		expect(observations).toHaveLength(1);
 		expect(observations?.[0]).toMatchObject({
@@ -165,7 +165,7 @@ describe("runObserver", () => {
 			});
 		});
 
-		const observations = await runObserver({ ...baseArgs, agentLoop: loop });
+		const observations = (await runObserver({ ...baseArgs, agentLoop: loop }))?.observations;
 
 		expect(observations).toHaveLength(1);
 		expect(observations?.[0].content).toBe("Same content");
@@ -193,10 +193,11 @@ describe("runObserver", () => {
 			});
 		}, [assistantEndEvent("error", "gateway timeout")]);
 
-		const observations = await runObserver({ ...baseArgs, agentLoop: loop });
+		const run = await runObserver({ ...baseArgs, agentLoop: loop });
 
-		expect(observations).toHaveLength(1);
-		expect(observations?.[0].content).toBe("Kept despite later error");
+		expect(run?.observations).toHaveLength(1);
+		expect(run?.observations[0].content).toBe("Kept despite later error");
+		expect(run?.complete).toBe(false);
 	});
 
 	it("uses maxTurns as an observer turn cap", async () => {

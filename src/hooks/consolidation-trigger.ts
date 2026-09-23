@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { runDropper } from "../agents/dropper/agent.js";
 import { observationPoolMetrics } from "../agents/dropper/pool.js";
-import { ObserverStreamError, runObserver } from "../agents/observer/agent.js";
+import { ObserverStreamError, runObserver, type ObserverRun } from "../agents/observer/agent.js";
 import { runReflector } from "../agents/reflector/agent.js";
 import { workerSessionId } from "../agents/loop-options.js";
 import { debugLog, withDebugLogContext } from "../debug-log.js";
@@ -62,6 +62,14 @@ function sourceEntriesAfter(entries: Entry[], index: number): Entry[] {
 
 function appendEntry(pi: ExtensionAPI, customType: string, data: unknown): void {
 	pi.appendEntry(customType, data);
+}
+
+function lastCitedSourceEntryId(observations: Observation[], sourceEntryIds: string[]): string | undefined {
+	const cited = new Set(observations.flatMap((observation) => observation.sourceEntryIds));
+	for (let i = sourceEntryIds.length - 1; i >= 0; i--) {
+		if (cited.has(sourceEntryIds[i])) return sourceEntryIds[i];
+	}
+	return undefined;
 }
 
 function mergeReflections(existing: Reflection[], additional: Reflection[]): Reflection[] {
@@ -326,9 +334,9 @@ async function runObserverStage(
 		priorObservations: priorObservations.length,
 	});
 
-	let observations: Observation[] | undefined;
+	let run: ObserverRun | undefined;
 	try {
-		observations = await runObserver({
+		run = await runObserver({
 			model: resolved.model as any,
 			apiKey: resolved.apiKey,
 			headers: resolved.headers,
@@ -352,6 +360,7 @@ async function runObserverStage(
 		}
 		throw error;
 	}
+	const observations = run?.observations;
 	if (!observations || observations.length === 0) {
 		// Deliberate empty: routine info, not a warning, and back off re-fires
 		// over the same span (#23).
@@ -365,15 +374,18 @@ async function runObserverStage(
 	}
 	runtime.observerEmptyBackoff = undefined;
 
-	const data = buildObservationsRecordedData(observations, coversUpToId);
+	// An unfinished run covers only up to the last source it cited; the rest is observed next time.
+	const coveredThroughId = run?.complete ? coversUpToId : lastCitedSourceEntryId(observations, sourceEntryIds);
+	if (coveredThroughId !== coversUpToId) debugLog("observer.incomplete", { coversUpToId, coveredThroughId });
+	const data = coveredThroughId ? buildObservationsRecordedData(observations, coveredThroughId) : undefined;
 	if (!data) return "continue";
 	debugLog("observer.records", {
 		count: observations.length,
 		observationTokens: observations.reduce((sum, observation) => sum + observation.tokenCount, 0),
-		coversUpToId,
+		coversUpToId: data.coversUpToId,
 	});
 	appendEntry(pi, OM_OBSERVATIONS_RECORDED, data);
-	debugLog("observer.appended", { count: observations.length, coversUpToId });
+	debugLog("observer.appended", { count: observations.length, coversUpToId: data.coversUpToId });
 	if (shouldNotifyWorker(runtime, ctx)) ctx.ui?.notify(
 		`Observational memory: ${observations.length} observation${observations.length === 1 ? "" : "s"} recorded`,
 		"info",
