@@ -37,6 +37,7 @@ type ResolvedModel = Extract<ResolveResult, { ok: true }>;
 
 type ConsolidationCtx = {
 	cwd: string;
+	isProjectTrusted?: () => boolean;
 	hasUI: boolean;
 	ui?: { notify: (message: string, type?: "warning" | "info" | "error") => void };
 	model: unknown;
@@ -200,7 +201,7 @@ function currentSessionId(ctx: ConsolidationCtx): string | undefined {
 }
 
 function maybeLaunchConsolidation(pi: ExtensionAPI, runtime: Runtime, ctx: ConsolidationCtx): void {
-	runtime.ensureConfig(ctx.cwd);
+	runtime.ensureConfig(ctx);
 	if (runtime.config.passive === true) return;
 	if (runtime.consolidationInFlight) return;
 	if (runtime.shutdown.signal.aborted) return;

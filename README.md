@@ -198,7 +198,7 @@ Settings live under the `observational-memory` namespace in either:
 * `~/.pi/agent/settings.json`
 * project-local `.pi/settings.json`
 
-Project settings override global settings.
+Project settings override global settings, and apply only while Pi trusts the project.
 
 `PI_OBSERVATIONAL_MEMORY_PASSIVE` can override only `passive`.
 

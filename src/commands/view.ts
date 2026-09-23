@@ -44,7 +44,7 @@ export function registerViewCommand(pi: ExtensionAPI, runtime: Runtime, options:
 	pi.registerCommand("om:view", {
 		description: "Print and copy observational memory content (visible by default, full for recorded memory)",
 		handler: async (args, ctx) => {
-			runtime.ensureConfig(ctx.cwd);
+			runtime.ensureConfig(ctx);
 			const entries = ctx.sessionManager.getBranch() as Entry[];
 			const mode = firstArg(args);
 

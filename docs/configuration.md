@@ -12,7 +12,7 @@ Pi reads settings from:
 2. Project settings: `<project>/.pi/settings.json`
 3. Environment override: `PI_OBSERVATIONAL_MEMORY_PASSIVE`
 
-Project settings override global settings. `PI_OBSERVATIONAL_MEMORY_PASSIVE` overrides only `passive` when set to a recognized value.
+Project settings override global settings, and apply only while Pi trusts the project. `PI_OBSERVATIONAL_MEMORY_PASSIVE` overrides only `passive` when set to a recognized value.
 
 All extension-owned settings live under:
 

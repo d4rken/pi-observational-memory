@@ -237,11 +237,12 @@ function readNamespacedConfig(path: string): Partial<Config> {
 	}
 }
 
-export function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env): Config {
+/** Project settings apply only when Pi trusts the project, like Pi's own project settings. */
+export function loadConfig(cwd: string, env: NodeJS.ProcessEnv = process.env, projectTrusted = false): Config {
 	const globalPath = join(getAgentDir(), "settings.json");
 	const projectPath = join(cwd, ".pi", "settings.json");
 	const globalConfig = readNamespacedConfig(globalPath);
-	const projectConfig = readNamespacedConfig(projectPath);
+	const projectConfig = projectTrusted ? readNamespacedConfig(projectPath) : {};
 	const envConfig = readEnvConfig(env);
 	const merged = {
 		...DEFAULTS,

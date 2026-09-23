@@ -10,6 +10,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 }));
 
 import { DEFAULTS, loadConfig, readEnvConfig, resolveCompactAfterTokens } from "../src/config.js";
+import { Runtime } from "../src/runtime.js";
 
 function writeJson(path: string, value: unknown) {
 	mkdirSync(join(path, ".."), { recursive: true });
@@ -49,7 +50,7 @@ describe("V3 config", () => {
 			passive: false,
 			debugLog: false,
 		});
-		expect(loadConfig(cwd, {})).toEqual(DEFAULTS);
+		expect(loadConfig(cwd, {}, true)).toEqual(DEFAULTS);
 	});
 
 	it("merges global, project, and env V3 settings in order", () => {
@@ -76,7 +77,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, { PI_OBSERVATIONAL_MEMORY_PASSIVE: "true" })).toMatchObject({
+		expect(loadConfig(cwd, { PI_OBSERVATIONAL_MEMORY_PASSIVE: "true" }, true)).toMatchObject({
 			observeAfterTokens: 100,
 			reflectAfterTokens: 20,
 			compactAfterTokens: 30,
@@ -91,6 +92,39 @@ describe("V3 config", () => {
 		});
 	});
 
+	it("ignores project settings unless the project is trusted", () => {
+		writeJson(join(agentDir, "settings.json"), {
+			"observational-memory": { observeAfterTokens: 10 },
+		});
+		writeJson(join(cwd, ".pi", "settings.json"), {
+			"observational-memory": {
+				observeAfterTokens: 100,
+				model: { provider: "openai", id: "project" },
+				debugLog: true,
+			},
+		});
+
+		const untrusted = loadConfig(cwd, {});
+		expect(untrusted.observeAfterTokens).toBe(10);
+		expect(untrusted.model).toBeUndefined();
+		expect(untrusted.debugLog).toBe(false);
+		expect(loadConfig(cwd, {}, true)).toMatchObject({ observeAfterTokens: 100, debugLog: true });
+	});
+
+	it("reads project settings through the runtime only when the context reports trust", () => {
+		writeJson(join(cwd, ".pi", "settings.json"), { "observational-memory": { observeAfterTokens: 100 } });
+		const load = (ctx: { cwd: string; isProjectTrusted?: () => boolean }) => {
+			const runtime = new Runtime();
+			runtime.ensureConfig(ctx);
+			return runtime.config.observeAfterTokens;
+		};
+
+		expect(load({ cwd, isProjectTrusted: () => true })).toBe(100);
+		expect(load({ cwd, isProjectTrusted: () => false })).toBe(DEFAULTS.observeAfterTokens);
+		expect(load({ cwd })).toBe(DEFAULTS.observeAfterTokens);
+		expect(load({ cwd, isProjectTrusted: () => { throw new Error("stale context"); } })).toBe(DEFAULTS.observeAfterTokens);
+	});
+
 	it("accepts max as a valid model thinking level", () => {
 		writeJson(join(cwd, ".pi", "settings.json"), {
 			"observational-memory": {
@@ -98,7 +132,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, {})).toMatchObject({
+		expect(loadConfig(cwd, {}, true)).toMatchObject({
 			model: { provider: "anthropic", id: "claude", thinking: "max" },
 		});
 	});
@@ -119,7 +153,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, {})).toEqual(DEFAULTS);
+		expect(loadConfig(cwd, {}, true)).toEqual(DEFAULTS);
 	});
 
 	it("derives observation pool target from the final max when omitted", () => {
@@ -129,7 +163,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, {})).toMatchObject({
+		expect(loadConfig(cwd, {}, true)).toMatchObject({
 			observationsPoolMaxTokens: 40,
 			observationsPoolTargetTokens: 20,
 		});
@@ -148,7 +182,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, {})).toMatchObject({
+		expect(loadConfig(cwd, {}, true)).toMatchObject({
 			observationsPoolMaxTokens: 40,
 			observationsPoolTargetTokens: 20,
 		});
@@ -169,7 +203,7 @@ describe("V3 config", () => {
 			},
 		});
 
-		expect(loadConfig(cwd, {})).toEqual(DEFAULTS);
+		expect(loadConfig(cwd, {}, true)).toEqual(DEFAULTS);
 	});
 
 	it("parses passive env override", () => {
@@ -187,7 +221,7 @@ describe("V3 config", () => {
 				},
 			});
 
-			expect(loadConfig(cwd, {})).toMatchObject({
+			expect(loadConfig(cwd, {}, true)).toMatchObject({
 				compactAfterTokensMode: "ratio",
 				compactAfterTokensRatio: 0.5,
 			});
@@ -200,7 +234,7 @@ describe("V3 config", () => {
 				},
 			});
 
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensMode: "calibrated" });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensMode: "calibrated" });
 		});
 
 		it("rejects ratio outside (0, 1) and falls back to default", () => {
@@ -209,28 +243,28 @@ describe("V3 config", () => {
 					compactAfterTokensRatio: 0,
 				},
 			});
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensRatio: 0.68 });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensRatio: 0.68 });
 
 			writeJson(join(cwd, ".pi", "settings.json"), {
 				"observational-memory": {
 					compactAfterTokensRatio: 1,
 				},
 			});
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensRatio: 0.68 });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensRatio: 0.68 });
 
 			writeJson(join(cwd, ".pi", "settings.json"), {
 				"observational-memory": {
 					compactAfterTokensRatio: 1.5,
 				},
 			});
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensRatio: 0.68 });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensRatio: 0.68 });
 
 			writeJson(join(cwd, ".pi", "settings.json"), {
 				"observational-memory": {
 					compactAfterTokensRatio: -0.2,
 				},
 			});
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensRatio: 0.68 });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensRatio: 0.68 });
 		});
 
 		it("rejects non-numeric ratio and falls back to default", () => {
@@ -239,7 +273,7 @@ describe("V3 config", () => {
 					compactAfterTokensRatio: "0.5",
 				},
 			});
-			expect(loadConfig(cwd, {})).toMatchObject({ compactAfterTokensRatio: 0.68 });
+			expect(loadConfig(cwd, {}, true)).toMatchObject({ compactAfterTokensRatio: 0.68 });
 		});
 	});
 

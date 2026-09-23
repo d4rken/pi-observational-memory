@@ -38,7 +38,7 @@ export function registerStatusCommand(pi: ExtensionAPI, runtime: Runtime): void 
 	pi.registerCommand("om:status", {
 		description: "Show observational memory status",
 		handler: async (_args, ctx) => {
-			runtime.ensureConfig(ctx.cwd);
+			runtime.ensureConfig(ctx);
 			const entries = ctx.sessionManager.getBranch() as Entry[];
 			const folded = foldLedger(entries);
 			const visible = visibleProjection(entries);

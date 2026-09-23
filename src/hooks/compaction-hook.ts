@@ -30,7 +30,7 @@ export function registerCompactionHook(pi: ExtensionAPI, runtime: Runtime): void
 
 		runtime.compactHookInFlight = true;
 		try {
-			runtime.ensureConfig(ctx.cwd);
+			runtime.ensureConfig(ctx);
 			const { preparation, branchEntries } = event;
 			const { firstKeptEntryId, tokensBefore } = preparation;
 			// Observer coverage lags the cut: decline so Pi's native summarizer covers that span.

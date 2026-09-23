@@ -91,6 +91,11 @@ export interface ResolveCtx {
 	ui?: { notify: Notify };
 }
 
+export interface ConfigCtx {
+	cwd: string;
+	isProjectTrusted?: () => boolean;
+}
+
 export interface LaunchCtx {
 	hasUI: boolean;
 	ui?: { notify: Notify };
@@ -119,9 +124,15 @@ export class Runtime {
 		tokensAtEmpty: number;
 	} | undefined;
 
-	ensureConfig(cwd: string): void {
+	ensureConfig(ctx: ConfigCtx): void {
 		if (this.configLoaded) return;
-		this.config = loadConfig(cwd);
+		let projectTrusted = false;
+		try {
+			projectTrusted = ctx.isProjectTrusted?.() === true;
+		} catch {
+			// A context without a trust answer gets global settings only.
+		}
+		this.config = loadConfig(ctx.cwd, process.env, projectTrusted);
 		this.configLoaded = true;
 	}
 
